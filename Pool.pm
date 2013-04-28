@@ -91,7 +91,9 @@ use Guard ();
 use Array::Heap ();
 
 use AnyEvent;
-use AnyEvent::Fork; # we don't actually depend on it, this is for convenience
+# explicit version on next line, as some cpan-testers test with the 0.1 version,
+# ignoring dependencies, and this line will at least give a clear indication of that.
+use AnyEvent::Fork 0.6; # we don't actually depend on it, this is for convenience
 use AnyEvent::Fork::RPC;
 
 # these are used for the first and last argument of events
@@ -100,7 +102,7 @@ use AnyEvent::Fork::RPC;
 my $magic0 = ':t6Z@HK1N%Dx@_7?=~-7NQgWDdAs6a,jFN=wLO0*jD*1%P';
 my $magic1 = '<~53rexz.U`!]X[A235^"fyEoiTF\T~oH1l/N6+Djep9b~bI9`\1x%B~vWO1q*';
 
-our $VERSION = 0.1;
+our $VERSION = 1.1;
 
 =item my $pool = AnyEvent::Fork::Pool::run $fork, $function, [key => value...]
 
@@ -448,6 +450,69 @@ and before the callback is invoked causes undefined behaviour.
 
 =cut
 
+=item $cpus = AnyEvent::Fork::Pool::ncpu [$default_cpus]
+
+=item ($cpus, $eus) = AnyEvent::Fork::Pool::ncpu [$default_cpus]
+
+Tries to detect the number of CPUs (C<$cpus> often called cpu cores
+nowadays) and execution units (C<$eus>) which include e.g. extra
+hyperthreaded units). When C<$cpus> cannot be determined reliably,
+C<$default_cpus> is returned for both values, or C<1> if it is missing.
+
+For normal CPU bound uses, it is wise to have as many worker processes
+as CPUs in the system (C<$cpus>), if nothing else uses the CPU. Using
+hyperthreading is usually detrimental to performance, but in those rare
+cases where that really helps it might be beneficial to use more workers
+(C<$eus>).
+
+Currently, F</proc/cpuinfo> is parsed on GNU/Linux systems for both
+C<$cpus> and C<$eu>, and on {Free,Net,Open}BSD, F<sysctl -n hw.ncpu> is
+used for C<$cpus>.
+
+Example: create a worker pool with as many workers as cpu cores, or C<2>,
+if the actual number could not be determined.
+
+   $fork->AnyEvent::Fork::Pool::run ("myworker::function",
+      max => (scalar AnyEvent::Fork::Pool::ncpu 2),
+   );
+
+=cut
+
+BEGIN {
+   if ($^O eq "linux") {
+      *ncpu = sub(;$) {
+         my ($cpus, $eus);
+
+         if (open my $fh, "<", "/proc/cpuinfo") {
+            my %id;
+
+            while (<$fh>) {
+               if (/^core id\s*:\s*(\d+)/) {
+                  ++$eus;
+                  undef $id{$1};
+               }
+            }
+
+            $cpus = scalar keys %id;
+         } else {
+            $cpus = $eus = @_ ? shift : 1;
+         }
+         wantarray ? ($cpus, $eus) : $cpus
+      };
+   } elsif ($^O eq "freebsd" || $^O eq "netbsd" || $^O eq "openbsd") {
+      *ncpu = sub(;$) {
+         my $cpus = qx<sysctl -n hw.ncpu> * 1
+                 || (@_ ? shift : 1);
+         wantarray ? ($cpus, $cpus) : $cpus
+      };
+   } else {
+      *ncpu = sub(;$) {
+         my $cpus = @_ ? shift : 1;
+         wantarray ? ($cpus, $cpus) : $cpus
+      };
+   }
+}
+
 =back
 
 =head1 CHILD USAGE
@@ -473,6 +538,18 @@ deems this useful. For example, after executing a job, one could check
 the process size or the number of jobs handled so far, and if either is
 too high, the worker could ask to get retired, to avoid memory leaks to
 accumulate.
+
+Example: retire a worker after it has handled roughly 100 requests.
+
+   my $count = 0;
+
+   sub my::worker {
+
+      ++$count == 100
+         and AnyEvent::Fork::Pool::retire ();
+
+      ... normal code goes here
+   }
 
 =back
 

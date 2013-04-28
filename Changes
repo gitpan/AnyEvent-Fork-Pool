@@ -1,8 +1,8 @@
 Revision history for Perl extension AnyEvent::Fork::Pool
 
-TODO: fucntino to return # cores
-
-THE API IS NOT FINISHED, CONSIDER THIS AN ALPHA RELEASE
+1.1   Sun Apr 28 16:18:57 CEST 2013
+        - works with AnyEvent::Fork::Remote (no changes were needed).
+	- new function: AnyEvent::Fork::Pool::ncpu.
 
 0.1   Sun Apr 21 14:27:57 CEST 2013
 	- first release.

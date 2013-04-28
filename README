@@ -237,6 +237,30 @@ PARENT USAGE
         modifying them after the call and before the callback is invoked
         causes undefined behaviour.
 
+    $cpus = AnyEvent::Fork::Pool::ncpu [$default_cpus]
+    ($cpus, $eus) = AnyEvent::Fork::Pool::ncpu [$default_cpus]
+        Tries to detect the number of CPUs ($cpus often called cpu cores
+        nowadays) and execution units ($eus) which include e.g. extra
+        hyperthreaded units). When $cpus cannot be determined reliably,
+        $default_cpus is returned for both values, or 1 if it is missing.
+
+        For normal CPU bound uses, it is wise to have as many worker
+        processes as CPUs in the system ($cpus), if nothing else uses the
+        CPU. Using hyperthreading is usually detrimental to performance, but
+        in those rare cases where that really helps it might be beneficial
+        to use more workers ($eus).
+
+        Currently, /proc/cpuinfo is parsed on GNU/Linux systems for both
+        $cpus and $eu, and on {Free,Net,Open}BSD, sysctl -n hw.ncpu is used
+        for $cpus.
+
+        Example: create a worker pool with as many workers as cpu cores, or
+        2, if the actual number could not be determined.
+
+           $fork->AnyEvent::Fork::Pool::run ("myworker::function",
+              max => (scalar AnyEvent::Fork::Pool::ncpu 2),
+           );
+
 CHILD USAGE
     In addition to the AnyEvent::Fork::RPC API, this module implements one
     more child-side function:
@@ -258,6 +282,18 @@ CHILD USAGE
         could check the process size or the number of jobs handled so far,
         and if either is too high, the worker could ask to get retired, to
         avoid memory leaks to accumulate.
+
+        Example: retire a worker after it has handled roughly 100 requests.
+
+           my $count = 0;
+
+           sub my::worker {
+
+              ++$count == 100
+                 and AnyEvent::Fork::Pool::retire ();
+
+              ... normal code goes here
+           }
 
 POOL PARAMETERS RECIPES
     This section describes some recipes for pool paramaters. These are
