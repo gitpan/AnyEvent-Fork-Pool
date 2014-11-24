@@ -2,13 +2,11 @@
 
 AnyEvent::Fork::Pool - simple process pool manager on top of AnyEvent::Fork
 
-THE API IS NOT FINISHED, CONSIDER THIS AN ALPHA RELEASE
-
 =head1 SYNOPSIS
 
    use AnyEvent;
+   use AnyEvent::Fork;
    use AnyEvent::Fork::Pool;
-   # use AnyEvent::Fork is not needed
 
    # all possible parameters shown, with default values
    my $pool = AnyEvent::Fork
@@ -45,16 +43,15 @@ THE API IS NOT FINISHED, CONSIDER THIS AN ALPHA RELEASE
 
 =head1 DESCRIPTION
 
-This module uses processes created via L<AnyEvent::Fork> and the RPC
-protocol implement in L<AnyEvent::Fork::RPC> to create a load-balanced
-pool of processes that handles jobs.
+This module uses processes created via L<AnyEvent::Fork> (or
+L<AnyEvent::Fork::Remote>) and the RPC protocol implement in
+L<AnyEvent::Fork::RPC> to create a load-balanced pool of processes that
+handles jobs.
 
 Understanding of L<AnyEvent::Fork> is helpful but not critical to be able
 to use this module, but a thorough understanding of L<AnyEvent::Fork::RPC>
 is, as it defines the actual API that needs to be implemented in the
 worker processes.
-
-=head1 EXAMPLES
 
 =head1 PARENT USAGE
 
@@ -91,9 +88,6 @@ use Guard ();
 use Array::Heap ();
 
 use AnyEvent;
-# explicit version on next line, as some cpan-testers test with the 0.1 version,
-# ignoring dependencies, and this line will at least give a clear indication of that.
-use AnyEvent::Fork 0.6; # we don't actually depend on it, this is for convenience
 use AnyEvent::Fork::RPC;
 
 # these are used for the first and last argument of events
@@ -102,7 +96,7 @@ use AnyEvent::Fork::RPC;
 my $magic0 = ':t6Z@HK1N%Dx@_7?=~-7NQgWDdAs6a,jFN=wLO0*jD*1%P';
 my $magic1 = '<~53rexz.U`!]X[A235^"fyEoiTF\T~oH1l/N6+Djep9b~bI9`\1x%B~vWO1q*';
 
-our $VERSION = 1.1;
+our $VERSION = 1.2;
 
 =item my $pool = AnyEvent::Fork::Pool::run $fork, $function, [key => value...]
 
@@ -405,7 +399,9 @@ sub run {
             }
          }
       } elsif ($shutdown) {
-         @pool = ();
+         undef $_->[2]
+            for @pool;
+
          undef $start_w;
          undef $start_worker; # frees $destroy_guard reference
 
@@ -454,7 +450,7 @@ and before the callback is invoked causes undefined behaviour.
 
 =item ($cpus, $eus) = AnyEvent::Fork::Pool::ncpu [$default_cpus]
 
-Tries to detect the number of CPUs (C<$cpus> often called cpu cores
+Tries to detect the number of CPUs (C<$cpus> often called CPU cores
 nowadays) and execution units (C<$eus>) which include e.g. extra
 hyperthreaded units). When C<$cpus> cannot be determined reliably,
 C<$default_cpus> is returned for both values, or C<1> if it is missing.
@@ -466,10 +462,10 @@ cases where that really helps it might be beneficial to use more workers
 (C<$eus>).
 
 Currently, F</proc/cpuinfo> is parsed on GNU/Linux systems for both
-C<$cpus> and C<$eu>, and on {Free,Net,Open}BSD, F<sysctl -n hw.ncpu> is
+C<$cpus> and C<$eus>, and on {Free,Net,Open}BSD, F<sysctl -n hw.ncpu> is
 used for C<$cpus>.
 
-Example: create a worker pool with as many workers as cpu cores, or C<2>,
+Example: create a worker pool with as many workers as CPU cores, or C<2>,
 if the actual number could not be determined.
 
    $fork->AnyEvent::Fork::Pool::run ("myworker::function",
@@ -526,7 +522,7 @@ more child-side function:
 
 This function sends an event to the parent process to request retirement:
 the worker is removed from the pool and no new jobs will be sent to it,
-but it has to handle the jobs that are already queued.
+but it still has to handle the jobs that are already queued.
 
 The parentheses are part of the syntax: the function usually isn't defined
 when you compile your code (because that happens I<before> handing the
@@ -534,12 +530,15 @@ template process over to C<AnyEvent::Fork::Pool::run>, so you need the
 empty parentheses to tell Perl that the function is indeed a function.
 
 Retiring a worker can be useful to gracefully shut it down when the worker
-deems this useful. For example, after executing a job, one could check
-the process size or the number of jobs handled so far, and if either is
-too high, the worker could ask to get retired, to avoid memory leaks to
+deems this useful. For example, after executing a job, it could check the
+process size or the number of jobs handled so far, and if either is too
+high, the worker could request to be retired, to avoid memory leaks to
 accumulate.
 
-Example: retire a worker after it has handled roughly 100 requests.
+Example: retire a worker after it has handled roughly 100 requests. It
+doesn't matter whether you retire at the beginning or end of your request,
+as the worker will continue to handle some outstanding requests. Likewise,
+it's ok to call retire multiple times.
 
    my $count = 0;
 
@@ -555,7 +554,7 @@ Example: retire a worker after it has handled roughly 100 requests.
 
 =head1 POOL PARAMETERS RECIPES
 
-This section describes some recipes for pool paramaters. These are mostly
+This section describes some recipes for pool parameters. These are mostly
 meant for the synchronous RPC backend, as the asynchronous RPC backend
 changes the rules considerably, making workers themselves responsible for
 their scheduling.
@@ -594,19 +593,21 @@ worker, C<load> might have much less of an effect.
 When your jobs are I/O bound, using more workers usually boils down to
 higher throughput, depending very much on your actual workload - sometimes
 having only one worker is best, for example, when you read or write big
-files at maixmum speed, as a second worker will increase seek times.
+files at maximum speed, as a second worker will increase seek times.
 
 =back
 
 =head1 EXCEPTIONS
 
-The same "policy" as with L<AnyEvent::Fork::RPC> applies - exceptins will
-not be caught, and exceptions in both worker and in callbacks causes
+The same "policy" as with L<AnyEvent::Fork::RPC> applies - exceptions
+will not be caught, and exceptions in both worker and in callbacks causes
 undesirable or undefined behaviour.
 
 =head1 SEE ALSO
 
 L<AnyEvent::Fork>, to create the processes in the first place.
+
+L<AnyEvent::Fork::Remote>, likewise, but helpful for remote processes.
 
 L<AnyEvent::Fork::RPC>, which implements the RPC protocol and API.
 
